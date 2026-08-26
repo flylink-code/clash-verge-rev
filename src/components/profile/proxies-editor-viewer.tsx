@@ -1,5 +1,6 @@
 import { arrayMove } from '@dnd-kit/helpers'
 import {
+  LinkRounded,
   VerticalAlignBottomRounded,
   VerticalAlignTopRounded,
 } from '@mui/icons-material'
@@ -28,6 +29,7 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { BaseSearchBox, MonacoEditor } from '@/components/base'
+import { ChainProxyDialog } from '@/components/profile/chain-proxy-dialog'
 import { ProxyItem } from '@/components/profile/proxy-item'
 import { readProfileFile, saveProfileFile } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
@@ -84,6 +86,7 @@ export const ProxiesEditorViewer = (props: Props) => {
   const [prependSeq, setPrependSeq] = useState<IProxyConfig[]>([])
   const [appendSeq, setAppendSeq] = useState<IProxyConfig[]>([])
   const [deleteSeq, setDeleteSeq] = useState<string[]>([])
+  const [chainProxyOpen, setChainProxyOpen] = useState(false)
   const hasLoadedSeqConfigRef = useRef(false)
 
   const filteredPrependSeq = useMemo(
@@ -99,6 +102,14 @@ export const ProxiesEditorViewer = (props: Props) => {
     () => appendSeq.filter((proxy) => hasValidName(proxy) && match(proxy.name)),
     [appendSeq, match],
   )
+
+  const allCandidateProxies = useMemo(() => {
+    const list: string[] = []
+    prependSeq.forEach((p) => p.name && list.push(p.name))
+    proxyList.forEach((p) => p.name && list.push(p.name))
+    appendSeq.forEach((p) => p.name && list.push(p.name))
+    return list
+  }, [prependSeq, proxyList, appendSeq])
 
   const items = useMemo(
     () =>
@@ -403,6 +414,19 @@ export const ProxiesEditorViewer = (props: Props) => {
               <Item>
                 <Button
                   fullWidth
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<LinkRounded />}
+                  onClick={() => setChainProxyOpen(true)}
+                >
+                  {t('profiles.chainProxy.quickBtn' as any, {
+                    defaultValue: '+ 快速配置链式代理 (SOCKS5/HTTP)',
+                  })}
+                </Button>
+              </Item>
+              <Item>
+                <Button
+                  fullWidth
                   variant="contained"
                   startIcon={<VerticalAlignTopRounded />}
                   onClick={() => {
@@ -486,6 +510,21 @@ export const ProxiesEditorViewer = (props: Props) => {
           {t('shared.actions.save')}
         </Button>
       </DialogActions>
+
+      {chainProxyOpen && (
+        <ChainProxyDialog
+          open={chainProxyOpen}
+          existingProxies={allCandidateProxies}
+          onClose={() => setChainProxyOpen(false)}
+          onSuccess={(proxy, position) => {
+            if (position === 'prepend') {
+              setPrependSeq((prev) => [proxy, ...prev])
+            } else {
+              setAppendSeq((prev) => [...prev, proxy])
+            }
+          }}
+        />
+      )}
     </Dialog>
   )
 }

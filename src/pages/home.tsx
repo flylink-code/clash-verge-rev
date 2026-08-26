@@ -26,6 +26,7 @@ import { Suspense, lazy, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BasePage } from '@/components/base'
+import { ChainProxyCard } from '@/components/home/chain-proxy-card'
 import { ClashModeCard } from '@/components/home/clash-mode-card'
 import { CurrentProxyCard } from '@/components/home/current-proxy-card'
 import { EnhancedCard } from '@/components/home/enhanced-card'
@@ -82,6 +83,7 @@ interface HomeCardsSettings {
   systeminfo: boolean
   test: boolean
   ip: boolean
+  chainProxy: boolean
   [key: string]: boolean
 }
 
@@ -89,6 +91,7 @@ const DEFAULT_HOME_CARDS: HomeCardsSettings = {
   info: false,
   profile: true,
   proxy: true,
+  chainProxy: true,
   network: true,
   mode: true,
   traffic: true,
@@ -153,6 +156,17 @@ const HomeSettingsDialog = ({
               />
             }
             label={t('home.page.settings.cards.currentProxy')}
+          />
+          <FormControlLabel
+            control={
+              <Checkbox
+                checked={cards.chainProxy ?? true}
+                onChange={() => handleToggle('chainProxy')}
+              />
+            }
+            label={t('home.chainProxy.cardTitle' as any, {
+              defaultValue: '链式代理 (静态出口)',
+            })}
           />
           <FormControlLabel
             control={
@@ -273,6 +287,7 @@ const HomePage = () => {
         <HomeProfileCard current={current} onProfileUpdated={mutateProfiles} />,
       ),
       renderCard('proxy', <CurrentProxyCard />),
+      renderCard('chainProxy', <ChainProxyCard />),
       renderCard('network', <NetworkSettingsCard />),
       renderCard('mode', <ClashModeEnhancedCard />),
     ],
