@@ -42,10 +42,11 @@ pub fn handle_validation_notice(outcome: &ValidationOutcome, target: ValidationN
             logging!(warn, Type::Config, "{} 验证失败: {}", file_type, message);
             handle::Handle::notice_message(status, message.to_owned());
         }
+        // Busy/Skipped means another validation is in flight or debounced — not a
+        // user-facing config error. Do not toast (and callers should not roll back).
         ValidationOutcome::Busy | ValidationOutcome::Skipped { .. } => {
             let message = outcome.to_string();
-            logging!(warn, Type::Config, "{} 验证跳过: {}", file_type, message);
-            handle::Handle::notice_message("config_validate::error", message);
+            logging!(info, Type::Config, "{} 验证跳过: {}", file_type, message);
         }
         ValidationOutcome::Valid => {}
     }

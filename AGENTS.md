@@ -100,8 +100,8 @@ git push --force-with-lease origin feat/chain-proxy
 1. **推荐：GitHub Actions 多平台包**  
    在 `feat/chain-proxy` 上打 `chain-v*` tag，或手动运行 [Chain Release Build](https://github.com/flylink-code/clash-verge-rev/actions/workflows/chain-release.yml)。产物上传到对应 Release，下载区格式对齐官方。
 2. 本机快速验证：`pnpm build:fast`（产物在 `src-tauri/target/fast-release/`，Windows 安装包在 `bundle/nsis/`）。
-3. **Tag 必须用** `chain-v2.5.x.y`（例如 `chain-v2.5.3.3`），**不要**打官方格式的 `v2.5.x`。官方 tag 会触发上游 Release workflow，且要求 tag 与 `package.json` 版本一致、并从 `main` 打出。打在 `feat/chain-proxy` 上的 `chain-v*` tag 会触发 `chain-release.yml`。
-4. 已发版本：<https://github.com/flylink-code/clash-verge-rev/releases/tag/chain-v2.5.3.3>
+3. **Tag 必须用** `chain-v2.5.x.y`（例如 `chain-v2.5.3.4`），**不要**打官方格式的 `v2.5.x`。官方 tag 会触发上游 Release workflow，且要求 tag 与 `package.json` 版本一致、并从 `main` 打出。打在 `feat/chain-proxy` 上的 `chain-v*` tag 会触发 `chain-release.yml`。
+4. 已发版本：<https://github.com/flylink-code/clash-verge-rev/releases/tag/chain-v2.5.3.4>
 
 ## 链式代理约定（实现时不要改语义）
 

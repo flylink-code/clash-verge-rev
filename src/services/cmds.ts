@@ -20,6 +20,10 @@ export async function enhanceProfiles() {
   )
 }
 
+export async function enhanceProfilesOutcome() {
+  return invoke<ValidationOutcome>('enhance_profiles')
+}
+
 export async function patchProfilesConfig(profiles: IProfilesConfig) {
   return invoke<ValidationOutcome>('patch_profiles_config', { profiles })
 }
@@ -39,15 +43,15 @@ export async function readProfileFile(index: string) {
   return invoke<string>('read_profile_file', { index })
 }
 
+export async function saveProfileFileOutcome(index: string, fileData: string) {
+  return invoke<ValidationOutcome>('save_profile_file', {
+    index,
+    fileData,
+  })
+}
+
 export async function saveProfileFile(index: string, fileData: string) {
-  return (
-    (
-      await invoke<ValidationOutcome>('save_profile_file', {
-        index,
-        fileData,
-      })
-    ).status === 'valid'
-  )
+  return (await saveProfileFileOutcome(index, fileData)).status === 'valid'
 }
 
 export async function importProfile(url: string, option?: IProfileOption) {

@@ -138,6 +138,12 @@ async fn handle_saved_profile_file(
 
     match CoreConfigValidator::validate_config_file_outcome(file_path_str, Some(is_merge_file)).await {
         Ok(outcome) if outcome.is_valid() => {}
+        Ok(outcome @ (ValidationOutcome::Busy | ValidationOutcome::Skipped { .. })) => {
+            // Keep the written file; runtime apply can retry once the lock frees.
+            logging!(info, Type::Config, "[cmd配置save] 文件验证暂忙，保留写入: {}", outcome);
+            handle_validation_notice(&outcome, target, file_type);
+            return Ok(outcome);
+        }
         Ok(outcome) => {
             logging!(warn, Type::Config, "[cmd配置save] 文件验证失败: {}", outcome);
             restore_original(file_path, original_content, original_existed).await?;
@@ -165,6 +171,17 @@ async fn handle_saved_profile_file(
             logging_error!(Type::Config, Config::sync_dns_override().await);
             handle::Handle::refresh_clash();
             Ok(ValidationOutcome::Valid)
+        }
+        Ok(outcome @ (ValidationOutcome::Busy | ValidationOutcome::Skipped { .. })) => {
+            // File is already on disk; leave it for a later enhance/apply.
+            logging!(
+                info,
+                Type::Config,
+                "[cmd配置save] 运行时配置应用暂忙，保留写入: {}",
+                outcome
+            );
+            handle_validation_notice(&outcome, ValidationNoticeTarget::Runtime, "运行时配置");
+            Ok(outcome)
         }
         Ok(outcome) => {
             logging!(warn, Type::Config, "[cmd配置save] 运行时配置应用失败: {}", outcome);
