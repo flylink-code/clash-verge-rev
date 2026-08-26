@@ -523,4 +523,3 @@ export const ChainProxyCard: React.FC = () => {
     </>
   )
 }
-export default ChainProxyCard

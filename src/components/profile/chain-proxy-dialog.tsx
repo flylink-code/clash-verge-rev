@@ -310,4 +310,3 @@ export const ChainProxyDialog: React.FC<Props> = ({
     </BaseDialog>
   )
 }
-export default ChainProxyDialog
