@@ -97,6 +97,7 @@
         "directMode": "直连模式",
         "group": "代理组",
         "proxy": "节点",
+        "chainEntry": "入口",
         "noActiveNode": "暂无激活的代理节点"
       },
       "status": {

@@ -13,7 +13,9 @@ scripts/_env.sh
 .eslintcache
 .changelog_backups
 target
+# This fork tracks AGENTS.md / Claude.md. Do not ignore them.
 .vfox.toml
 .vfox
 .claude
+# Tracked in this fork: see AGENTS.md
 .zed

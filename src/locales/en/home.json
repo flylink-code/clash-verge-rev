@@ -97,6 +97,7 @@
         "directMode": "Direct Mode",
         "group": "Group",
         "proxy": "Proxy",
+        "chainEntry": "Entry",
         "noActiveNode": "No active proxy node"
       },
       "status": {
