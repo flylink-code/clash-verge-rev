@@ -1,0 +1,307 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { useProfiles } from '@/hooks/use-profiles'
+import {
+  useAppRefreshers,
+  useClashConfigData,
+  useProxiesData,
+} from '@/providers/app-data-context'
+import { enhanceProfiles } from '@/services/cmds'
+import { showNotice } from '@/services/notice-service'
+import {
+  type IChainExitNode,
+  type IChainIpState,
+  type IChainProxySettings,
+  activateChainProxySelection,
+  chainExitProxyName,
+  clearPrevSelection,
+  fetchCurrentExitIp,
+  getChainDelayResults,
+  getChainIpState,
+  getChainProxySettings,
+  getStoredPrevSelection,
+  resolveCurrentProxyContext,
+  resolvePreferredEntryName,
+  saveChainProxySettings,
+  savePrevSelection,
+  setChainDelayResult,
+  setChainIpState,
+  subscribeChainDelayResults,
+  subscribeChainIpState,
+  subscribeChainProxySettings,
+  syncChainProxyToMerge,
+  testChainProxyDelay,
+} from '@/utils/chain-proxy'
+
+export type { IExitIpData } from '@/utils/chain-proxy'
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
+
+async function enhanceProfilesWithRetry(): Promise<boolean> {
+  const first = await enhanceProfiles()
+  if (first) return true
+  await sleep(400)
+  return enhanceProfiles()
+}
+
+export function useChainProxy() {
+  const [settings, setSettings] = useState<IChainProxySettings>(() =>
+    getChainProxySettings(),
+  )
+  const [loading, setLoading] = useState(false)
+  const [delayResults, setDelayResults] = useState<Record<string, number>>(() =>
+    getChainDelayResults(),
+  )
+  const [ipState, setIpState] = useState<IChainIpState>(() => getChainIpState())
+
+  const { proxyView } = useProxiesData()
+  const { clashConfig } = useClashConfigData()
+  const { refreshProxy } = useAppRefreshers()
+  const { current: currentProfile } = useProfiles()
+  const profileUid = currentProfile?.uid || null
+  const clashMode = clashConfig?.mode
+
+  useEffect(() => {
+    const unsubSettings = subscribeChainProxySettings((newSettings) => {
+      setSettings(newSettings)
+    })
+    const unsubDelay = subscribeChainDelayResults((results) => {
+      setDelayResults(results)
+    })
+    const unsubIp = subscribeChainIpState((next) => {
+      setIpState(next)
+    })
+    return () => {
+      unsubSettings()
+      unsubDelay()
+      unsubIp()
+    }
+  }, [])
+
+  const selectedExitNode = useMemo(() => {
+    if (!settings.selectedExitId) return undefined
+    return settings.exitNodes.find((n) => n.id === settings.selectedExitId)
+  }, [settings.selectedExitId, settings.exitNodes])
+
+  const applyAndSync = useCallback(
+    async (nextSettings: IChainProxySettings) => {
+      const enabling = nextSettings.enabled && !settings.enabled
+      const disabling = !nextSettings.enabled && settings.enabled
+      const preferredEntryName = resolvePreferredEntryName(
+        proxyView,
+        clashMode,
+        profileUid,
+      )
+      const currentCtx = resolveCurrentProxyContext(
+        proxyView,
+        clashMode,
+        profileUid,
+      )
+
+      if (
+        enabling &&
+        currentCtx.nodeName &&
+        currentCtx.groupName !== 'DIRECT'
+      ) {
+        savePrevSelection({
+          groupName: currentCtx.groupName,
+          nodeName: currentCtx.nodeName,
+        })
+      }
+
+      saveChainProxySettings(nextSettings)
+      setSettings(nextSettings)
+      try {
+        setLoading(true)
+        await syncChainProxyToMerge(nextSettings, preferredEntryName)
+        const enhanced = await enhanceProfilesWithRetry()
+        if (!enhanced) {
+          throw new Error('enhanceProfiles returned invalid')
+        }
+
+        const exitNode = nextSettings.exitNodes.find(
+          (node) => node.id === nextSettings.selectedExitId,
+        )
+        const targetGroupNames = [
+          currentCtx.groupName,
+          proxyView?.global?.name || 'GLOBAL',
+        ]
+        await activateChainProxySelection({
+          enabled: nextSettings.enabled,
+          exitNode,
+          preferredEntryName,
+          targetGroupNames,
+          restoreSelection: disabling ? getStoredPrevSelection() : null,
+        })
+        if (disabling) {
+          clearPrevSelection()
+        }
+        await refreshProxy().catch(() => {})
+      } catch (err) {
+        console.error('[useChainProxy] Sync failed:', err)
+        showNotice.error('链式代理配置同步失败')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [clashMode, profileUid, proxyView, refreshProxy, settings.enabled],
+  )
+
+  const toggleEnabled = useCallback(
+    async (targetEnabled?: boolean) => {
+      const nextEnabled =
+        typeof targetEnabled === 'boolean' ? targetEnabled : !settings.enabled
+
+      if (
+        nextEnabled &&
+        !settings.selectedExitId &&
+        settings.exitNodes.length > 0
+      ) {
+        const nextSettings: IChainProxySettings = {
+          ...settings,
+          enabled: true,
+          selectedExitId: settings.exitNodes[0].id,
+        }
+        await applyAndSync(nextSettings)
+        return
+      }
+
+      const nextSettings: IChainProxySettings = {
+        ...settings,
+        enabled: nextEnabled,
+      }
+      await applyAndSync(nextSettings)
+    },
+    [settings, applyAndSync],
+  )
+
+  const selectExitNode = useCallback(
+    async (exitId: string) => {
+      const nextSettings: IChainProxySettings = {
+        ...settings,
+        selectedExitId: exitId,
+      }
+      await applyAndSync(nextSettings)
+    },
+    [settings, applyAndSync],
+  )
+
+  const saveExitNode = useCallback(
+    async (node: IChainExitNode) => {
+      const existsIndex = settings.exitNodes.findIndex((n) => n.id === node.id)
+      let nextNodes: IChainExitNode[]
+      if (existsIndex >= 0) {
+        nextNodes = [...settings.exitNodes]
+        nextNodes[existsIndex] = node
+      } else {
+        nextNodes = [...settings.exitNodes, node]
+      }
+
+      const nextSelectedId =
+        settings.selectedExitId ||
+        (nextNodes.length === 1 ? node.id : settings.selectedExitId)
+
+      const nextSettings: IChainProxySettings = {
+        ...settings,
+        exitNodes: nextNodes,
+        selectedExitId: nextSelectedId,
+      }
+      await applyAndSync(nextSettings)
+    },
+    [settings, applyAndSync],
+  )
+
+  const deleteExitNode = useCallback(
+    async (nodeId: string) => {
+      const nextNodes = settings.exitNodes.filter((n) => n.id !== nodeId)
+      let nextSelectedId = settings.selectedExitId
+      if (nextSelectedId === nodeId) {
+        nextSelectedId = nextNodes.length > 0 ? nextNodes[0].id : null
+      }
+      const nextSettings: IChainProxySettings = {
+        ...settings,
+        exitNodes: nextNodes,
+        selectedExitId: nextSelectedId,
+        enabled: nextNodes.length === 0 ? false : settings.enabled,
+      }
+      await applyAndSync(nextSettings)
+    },
+    [settings, applyAndSync],
+  )
+
+  const testNode = useCallback(
+    async (node: IChainExitNode) => {
+      if (!settings.enabled || settings.selectedExitId !== node.id) {
+        showNotice.error('请先开启链式代理并选用该出口后再测试')
+        setChainDelayResult(node.id, 1e6)
+        return 1e6
+      }
+      setChainDelayResult(node.id, -2)
+      try {
+        const delay = await testChainProxyDelay(node.name)
+        setChainDelayResult(node.id, delay)
+        return delay
+      } catch (err) {
+        console.warn('[useChainProxy] Test delay failed:', err)
+        showNotice.error('出口节点尚未加载到内核，请稍后再测')
+        setChainDelayResult(node.id, 1e6)
+        return 1e6
+      }
+    },
+    [settings.enabled, settings.selectedExitId],
+  )
+
+  const testCurrentExit = useCallback(async () => {
+    if (!selectedExitNode) return
+    return await testNode(selectedExitNode)
+  }, [selectedExitNode, testNode])
+
+  const checkCurrentIp = useCallback(async () => {
+    setChainIpState({ ...getChainIpState(), loading: true, error: null })
+    try {
+      const info = await fetchCurrentExitIp()
+      setChainIpState({ data: info, loading: false, error: null })
+      return info
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '获取 IP 信息失败'
+      setChainIpState({ data: null, loading: false, error: msg })
+      console.warn('[useChainProxy] Failed to check IP:', err)
+      return null
+    }
+  }, [])
+
+  const currentOutboundIsExit = useMemo(() => {
+    if (!settings.enabled || !selectedExitNode || !proxyView) return false
+    const exitName = chainExitProxyName(selectedExitNode.name)
+    const ctx = resolveCurrentProxyContext(proxyView, clashMode, profileUid)
+    const group =
+      ctx.groupName === (proxyView.global?.name || 'GLOBAL')
+        ? proxyView.global
+        : proxyView.groups.find((item) => item.name === ctx.groupName)
+    return group?.now === exitName || proxyView.global?.now === exitName
+  }, [clashMode, profileUid, proxyView, selectedExitNode, settings.enabled])
+
+  return {
+    settings,
+    enabled: settings.enabled,
+    selectedExitNode,
+    exitNodes: settings.exitNodes,
+    loading,
+    delayResults,
+    ipData: ipState.data,
+    ipLoading: ipState.loading,
+    ipError: ipState.error,
+    currentOutboundIsExit,
+    toggleEnabled,
+    selectExitNode,
+    saveExitNode,
+    deleteExitNode,
+    testNode,
+    testCurrentExit,
+    checkCurrentIp,
+    refreshSync: () => applyAndSync(settings),
+  }
+}
