@@ -6,6 +6,6 @@
 
 - `dev` 跟踪官方；自定义只在 `feat/chain-proxy`。
 - 同步：`git fetch upstream` → `git rebase upstream/dev`（在 `feat/chain-proxy` 上）→ 测过 → `git push --force-with-lease origin feat/chain-proxy`。
-- 发版：`pnpm build:fast`；tag 用 `chain-v2.5.x.y`，不要打官方 `v2.5.x`。
-- 已发：https://github.com/flylink-code/clash-verge-rev/releases/tag/chain-v2.5.3.2
+- 发版：打 `chain-v*` 或跑 `Chain Release Build` workflow；不要打官方 `v2.5.x`。
+- 已发：https://github.com/flylink-code/clash-verge-rev/releases/tag/chain-v2.5.3.3
 - 不要把链式提交推到跟踪官方的 `dev`。
