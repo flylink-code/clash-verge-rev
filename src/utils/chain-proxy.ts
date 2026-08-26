@@ -755,12 +755,6 @@ ${SCRIPT_CHAIN_BLOCK_END}
 `.trim()
 }
 
-async function sleep(ms: number) {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, ms)
-  })
-}
-
 /**
  * 将当前选中的静态出口节点与全局 Script 和 Proxies 进行双向同步
  * 当开启时：在 Script 中注入前置入口组并重定向所有流量出站到静态出口
