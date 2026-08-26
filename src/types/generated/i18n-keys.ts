@@ -81,6 +81,7 @@ export const translationKeys = [
   'home.components.currentProxy.labels.directMode',
   'home.components.currentProxy.labels.group',
   'home.components.currentProxy.labels.proxy',
+  'home.components.currentProxy.labels.chainEntry',
   'home.components.currentProxy.labels.noActiveNode',
   'home.components.currentProxy.status.testing',
   'home.components.currentProxy.status.untested',

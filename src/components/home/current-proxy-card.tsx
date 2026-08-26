@@ -39,6 +39,7 @@ import { useNavigate } from 'react-router'
 
 import { EnhancedCard } from '@/components/home/enhanced-card'
 import type { ProxySortType } from '@/components/proxy/use-filter-sort'
+import { useChainProxy } from '@/hooks/use-chain-proxy'
 import { useGroupDelays } from '@/hooks/use-group-delays'
 import { useProfiles } from '@/hooks/use-profiles'
 import { useProxySelection } from '@/hooks/use-proxy-selection'
@@ -59,6 +60,10 @@ import {
   type ProxyGroupView,
   type ResolvedProxyMember,
 } from '@/types/proxy-view'
+import {
+  CHAIN_ENTRY_GROUP_NAME,
+  isChainExitProxyName,
+} from '@/utils/chain-proxy'
 import { debugLog } from '@/utils/debug'
 import { compareByDelay, DEFAULT_DELAY_TIMEOUT } from '@/utils/delay'
 
@@ -392,6 +397,12 @@ export const CurrentProxyCard = () => {
   const { isCoreDataPending } = useCoreDataStatus()
   const { verge } = useVerge()
   const { current: currentProfile } = useProfiles()
+  const {
+    enabled: chainEnabled,
+    kernelPaused,
+    currentEntryName,
+    switchEntryHop,
+  } = useChainProxy()
   const autoDelayEnabled = verge?.enable_auto_delay_detection ?? false
   const defaultLatencyTimeout = verge?.default_latency_timeout
   const autoDelayIntervalMs = useMemo(() => {
@@ -484,6 +495,7 @@ export const CurrentProxyCard = () => {
     return proxyView.groups.filter(
       (group) =>
         !group.hidden &&
+        group.name !== CHAIN_ENTRY_GROUP_NAME &&
         (group.type === 'Selector' || group.type === 'URLTest'),
     )
   }, [proxyView])
@@ -519,10 +531,15 @@ export const CurrentProxyCard = () => {
     [proxyView],
   )
 
-  const unsortedProxyOptions = useMemo(
-    () => optionsForGroup(selectedGroup),
-    [optionsForGroup, selectedGroup],
-  )
+  const unsortedProxyOptions = useMemo(() => {
+    const options = optionsForGroup(selectedGroup)
+    if (!chainEnabled) return options
+    return options.filter(
+      (option) =>
+        !isChainExitProxyName(option.member.ref.name) &&
+        option.member.ref.name !== CHAIN_ENTRY_GROUP_NAME,
+    )
+  }, [chainEnabled, optionsForGroup, selectedGroup])
 
   useEffect(() => {
     if (!proxyView) return
@@ -564,6 +581,11 @@ export const CurrentProxyCard = () => {
     writeProfileScopedItem,
   ])
 
+  const chainDisplayActive =
+    chainEnabled &&
+    !isDirectMode &&
+    isChainExitProxyName(selectedGroup?.now ?? '')
+
   const currentOption = useMemo(() => {
     if (!proxyView) return undefined
     if (isDirectMode) {
@@ -582,10 +604,43 @@ export const CurrentProxyCard = () => {
           } satisfies Pick<ProxyOption, 'memberIndex' | 'member'>)
         : undefined
     }
+    if (chainDisplayActive && currentEntryName) {
+      const inSelectedGroup = unsortedProxyOptions.find(
+        (option) =>
+          option.member.ref.name === currentEntryName &&
+          isInteractableMember(option.member),
+      )
+      if (inSelectedGroup) {
+        return {
+          memberIndex: inSelectedGroup.memberIndex,
+          member: inSelectedGroup.member,
+        }
+      }
+      const entryGroup = proxyView.groups.find(
+        (group) => group.name === CHAIN_ENTRY_GROUP_NAME,
+      )
+      const inEntryGroup = optionsForGroup(entryGroup ?? null).find(
+        (option) => option.member.ref.name === currentEntryName,
+      )
+      if (inEntryGroup) {
+        return {
+          memberIndex: inEntryGroup.memberIndex,
+          member: inEntryGroup.member,
+        }
+      }
+    }
     return selectedGroup
       ? findCurrentGroupMember(proxyView, selectedGroup)
       : undefined
-  }, [isDirectMode, proxyView, selectedGroup])
+  }, [
+    chainDisplayActive,
+    currentEntryName,
+    isDirectMode,
+    optionsForGroup,
+    proxyView,
+    selectedGroup,
+    unsortedProxyOptions,
+  ])
 
   latestProxyMemberRef.current = currentOption?.member ?? null
 
@@ -608,8 +663,18 @@ export const CurrentProxyCard = () => {
       if (!selectedGroup || !option || !isInteractableMember(option.member)) {
         return
       }
-      const previousProxy = selectedGroup.now
       const nextName = option.member.ref.name
+      if (
+        isChainExitProxyName(nextName) ||
+        nextName === CHAIN_ENTRY_GROUP_NAME
+      ) {
+        return
+      }
+      if (chainEnabled && !kernelPaused) {
+        void switchEntryHop(nextName)
+        return
+      }
+      const previousProxy = selectedGroup.now
       // The profile selection is the durable source across core restarts and run modes.
       handleSelectChange(
         selectedGroup.name,
@@ -619,7 +684,15 @@ export const CurrentProxyCard = () => {
         target: { value: nextName },
       })
     },
-    [handleSelectChange, isDirectMode, selectedGroup, unsortedProxyOptions],
+    [
+      chainEnabled,
+      handleSelectChange,
+      isDirectMode,
+      kernelPaused,
+      selectedGroup,
+      switchEntryHop,
+      unsortedProxyOptions,
+    ],
   )
 
   const goToProxies = useCallback(() => {
@@ -887,10 +960,28 @@ export const CurrentProxyCard = () => {
             }}
           >
             <Box>
-              <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
-                {currentProxy?.name ??
-                  t('home.components.currentProxy.labels.noActiveNode')}
-              </Typography>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 0.75,
+                }}
+              >
+                <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+                  {currentProxy?.name ??
+                    t('home.components.currentProxy.labels.noActiveNode')}
+                </Typography>
+                {chainDisplayActive && (
+                  <Chip
+                    size="small"
+                    label={t('home.components.currentProxy.labels.chainEntry')}
+                    color="primary"
+                    variant="outlined"
+                    sx={{ height: 20, fontSize: '0.7rem' }}
+                  />
+                )}
+              </Box>
 
               <Box
                 sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}
@@ -975,9 +1066,12 @@ export const CurrentProxyCard = () => {
             label={t('home.components.currentProxy.labels.proxy')}
             groupName={selectedGroupName}
             value={
-              currentOption
+              unsortedProxyOptions.find(
+                (option) => option.member.ref.name === selectedProxyName,
+              )?.value ??
+              (currentOption
                 ? optionValue(currentOption.memberIndex, currentOption.member)
-                : ''
+                : '')
             }
             selectedName={selectedProxyName}
             selectedDelay={currentDelay}

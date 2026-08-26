@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useProfiles } from '@/hooks/use-profiles'
+import { useVerge } from '@/hooks/use-verge'
 import {
   useAppRefreshers,
   useClashConfigData,
@@ -13,6 +14,7 @@ import {
   type IChainIpState,
   type IChainProxySettings,
   activateChainProxySelection,
+  applyEntryHop,
   chainExitProxyName,
   clearPrevSelection,
   fetchCurrentExitIp,
@@ -20,6 +22,7 @@ import {
   getChainIpState,
   getChainProxySettings,
   getStoredPrevSelection,
+  isChainExitProxyName,
   resolveCurrentProxyContext,
   resolvePreferredEntryName,
   saveChainProxySettings,
@@ -47,6 +50,20 @@ async function enhanceProfilesWithRetry(): Promise<boolean> {
   return enhanceProfiles()
 }
 
+type KernelIntent = 'apply' | 'pause' | 'idle'
+
+let kernelIntent: KernelIntent = 'idle'
+let kernelSyncTail: Promise<void> = Promise.resolve()
+
+function enqueueChainKernelSync(
+  intent: KernelIntent,
+  task: () => Promise<void>,
+): void {
+  if (kernelIntent === intent) return
+  kernelIntent = intent
+  kernelSyncTail = kernelSyncTail.then(task, task)
+}
+
 export function useChainProxy() {
   const [settings, setSettings] = useState<IChainProxySettings>(() =>
     getChainProxySettings(),
@@ -57,12 +74,16 @@ export function useChainProxy() {
   )
   const [ipState, setIpState] = useState<IChainIpState>(() => getChainIpState())
 
+  const { verge } = useVerge()
   const { proxyView } = useProxiesData()
   const { clashConfig } = useClashConfigData()
   const { refreshProxy } = useAppRefreshers()
   const { current: currentProfile } = useProfiles()
   const profileUid = currentProfile?.uid || null
   const clashMode = clashConfig?.mode
+  const trafficIntercepted = Boolean(
+    verge?.enable_system_proxy || verge?.enable_tun_mode,
+  )
 
   useEffect(() => {
     const unsubSettings = subscribeChainProxySettings((newSettings) => {
@@ -114,9 +135,19 @@ export function useChainProxy() {
 
       saveChainProxySettings(nextSettings)
       setSettings(nextSettings)
+
+      const shouldApplyKernel = nextSettings.enabled && trafficIntercepted
+      const shouldPauseKernel = nextSettings.enabled && !trafficIntercepted
+      kernelIntent = disabling ? 'idle' : shouldApplyKernel ? 'apply' : 'pause'
+
       try {
         setLoading(true)
-        await syncChainProxyToMerge(nextSettings, preferredEntryName)
+        await syncChainProxyToMerge(
+          shouldApplyKernel
+            ? nextSettings
+            : { ...nextSettings, enabled: false },
+          preferredEntryName,
+        )
         const enhanced = await enhanceProfilesWithRetry()
         if (!enhanced) {
           throw new Error('enhanceProfiles returned invalid')
@@ -130,11 +161,12 @@ export function useChainProxy() {
           proxyView?.global?.name || 'GLOBAL',
         ]
         await activateChainProxySelection({
-          enabled: nextSettings.enabled,
+          enabled: shouldApplyKernel,
           exitNode,
           preferredEntryName,
           targetGroupNames,
-          restoreSelection: disabling ? getStoredPrevSelection() : null,
+          restoreSelection:
+            disabling || shouldPauseKernel ? getStoredPrevSelection() : null,
         })
         if (disabling) {
           clearPrevSelection()
@@ -147,8 +179,36 @@ export function useChainProxy() {
         setLoading(false)
       }
     },
-    [clashMode, profileUid, proxyView, refreshProxy, settings.enabled],
+    [
+      clashMode,
+      profileUid,
+      proxyView,
+      refreshProxy,
+      settings.enabled,
+      trafficIntercepted,
+    ],
   )
+
+  const applyAndSyncRef = useRef(applyAndSync)
+  applyAndSyncRef.current = applyAndSync
+
+  useEffect(() => {
+    if (!settings.enabled) {
+      kernelIntent = 'idle'
+      return
+    }
+    if (!trafficIntercepted) {
+      enqueueChainKernelSync('pause', () =>
+        applyAndSyncRef.current(getChainProxySettings()),
+      )
+      return
+    }
+    if (kernelIntent === 'pause') {
+      enqueueChainKernelSync('apply', () =>
+        applyAndSyncRef.current(getChainProxySettings()),
+      )
+    }
+  }, [settings.enabled, trafficIntercepted])
 
   const toggleEnabled = useCallback(
     async (targetEnabled?: boolean) => {
@@ -284,6 +344,63 @@ export function useChainProxy() {
     return group?.now === exitName || proxyView.global?.now === exitName
   }, [clashMode, profileUid, proxyView, selectedExitNode, settings.enabled])
 
+  const currentEntryName = useMemo(() => {
+    if (!settings.enabled) return undefined
+    return resolvePreferredEntryName(proxyView, clashMode, profileUid)
+  }, [clashMode, profileUid, proxyView, settings.enabled])
+
+  const switchEntryHop = useCallback(
+    async (entryName: string) => {
+      if (!settings.enabled || !selectedExitNode || !trafficIntercepted) return
+      if (
+        !entryName ||
+        entryName === 'DIRECT' ||
+        isChainExitProxyName(entryName)
+      ) {
+        return
+      }
+
+      const currentCtx = resolveCurrentProxyContext(
+        proxyView,
+        clashMode,
+        profileUid,
+      )
+      savePrevSelection({
+        groupName: currentCtx.groupName,
+        nodeName: entryName,
+      })
+
+      try {
+        setLoading(true)
+        await applyEntryHop({
+          exitNode: selectedExitNode,
+          entryName,
+          targetGroupNames: [
+            currentCtx.groupName,
+            proxyView?.global?.name || 'GLOBAL',
+          ],
+        })
+        await refreshProxy().catch(() => {})
+      } catch (err) {
+        console.error('[useChainProxy] Switch entry hop failed:', err)
+        showNotice.error('切换链式入口失败')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [
+      clashMode,
+      profileUid,
+      proxyView,
+      refreshProxy,
+      selectedExitNode,
+      settings.enabled,
+      trafficIntercepted,
+    ],
+  )
+
+  const kernelPaused = settings.enabled && !trafficIntercepted
+
   return {
     settings,
     enabled: settings.enabled,
@@ -295,6 +412,10 @@ export function useChainProxy() {
     ipLoading: ipState.loading,
     ipError: ipState.error,
     currentOutboundIsExit,
+    currentEntryName,
+    trafficIntercepted,
+    kernelPaused,
+    switchEntryHop,
     toggleEnabled,
     selectExitNode,
     saveExitNode,

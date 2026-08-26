@@ -119,6 +119,17 @@ const sleep = (ms: number) =>
     setTimeout(resolve, ms)
   })
 
+let chainApplyGeneration = 0
+
+export function invalidateChainApplyJobs(): number {
+  chainApplyGeneration += 1
+  return chainApplyGeneration
+}
+
+function isChainApplyCurrent(generation: number): boolean {
+  return generation === chainApplyGeneration
+}
+
 export function chainExitProxyName(nodeName: string): string {
   return `${CHAIN_EXIT_PREFIX}${nodeName}`
 }
@@ -325,6 +336,50 @@ async function selectAndRecord(
   })
 }
 
+export async function applyEntryHop(options: {
+  exitNode: IChainExitNode
+  entryName: string
+  targetGroupNames: string[]
+  generation?: number
+}): Promise<void> {
+  const { exitNode, entryName, targetGroupNames } = options
+  const generation = options.generation ?? chainApplyGeneration
+  const exitName = chainExitProxyName(exitNode.name)
+  if (!isChainApplyCurrent(generation)) return
+
+  if (entryName && entryName !== 'DIRECT') {
+    await updateProxyChainConfigInRuntime([entryName, exitName]).catch(
+      (err) => {
+        console.warn('[ChainProxy] Failed to apply runtime dialer chain:', err)
+      },
+    )
+    if (!isChainApplyCurrent(generation)) return
+    try {
+      await selectAndRecord(CHAIN_ENTRY_GROUP_NAME, entryName)
+    } catch (err) {
+      console.warn('[ChainProxy] Failed to select preferred entry hop:', err)
+    }
+  }
+
+  if (!isChainApplyCurrent(generation)) return
+  const uniqueGroups = [...new Set(targetGroupNames)].filter(
+    (name) => name && name !== 'DIRECT' && name !== CHAIN_ENTRY_GROUP_NAME,
+  )
+  for (const groupName of uniqueGroups) {
+    if (!isChainApplyCurrent(generation)) return
+    try {
+      await selectAndRecord(groupName, exitName)
+    } catch (err) {
+      console.warn(
+        `[ChainProxy] Failed to select ${exitName} in ${groupName}:`,
+        err,
+      )
+    }
+  }
+  if (!isChainApplyCurrent(generation)) return
+  await closeAllConnections().catch(() => {})
+}
+
 export async function activateChainProxySelection(options: {
   enabled: boolean
   exitNode?: IChainExitNode
@@ -340,51 +395,35 @@ export async function activateChainProxySelection(options: {
     restoreSelection,
   } = options
 
+  const generation = invalidateChainApplyJobs()
+
   if (enabled && exitNode) {
     const exitName = chainExitProxyName(exitNode.name)
     const ready = await waitForProxyInCore(exitName)
     if (!ready) {
       throw new Error(`Exit proxy ${exitName} is not loaded in core`)
     }
+    if (!isChainApplyCurrent(generation)) return
 
-    if (preferredEntryName && preferredEntryName !== 'DIRECT') {
-      await updateProxyChainConfigInRuntime([
-        preferredEntryName,
-        exitName,
-      ]).catch((err) => {
-        console.warn('[ChainProxy] Failed to apply runtime dialer chain:', err)
-      })
-    }
+    await applyEntryHop({
+      exitNode,
+      entryName: preferredEntryName || '',
+      targetGroupNames,
+      generation,
+    })
 
-    const uniqueGroups = [...new Set(targetGroupNames)].filter(
-      (name) => name && name !== 'DIRECT' && name !== CHAIN_ENTRY_GROUP_NAME,
-    )
-    for (const groupName of uniqueGroups) {
-      try {
-        await selectAndRecord(groupName, exitName)
-      } catch (err) {
-        console.warn(
-          `[ChainProxy] Failed to select ${exitName} in ${groupName}:`,
-          err,
-        )
-      }
-    }
-    await closeAllConnections().catch(() => {})
     void (async () => {
       await sleep(800)
-      for (const groupName of uniqueGroups) {
-        try {
-          await selectAndRecord(groupName, exitName)
-        } catch {
-          // restore_selected_nodes may still be settling
-        }
-      }
-      if (preferredEntryName) {
-        try {
-          await selectAndRecord(CHAIN_ENTRY_GROUP_NAME, preferredEntryName)
-        } catch {
-          // ignore
-        }
+      if (!isChainApplyCurrent(generation)) return
+      try {
+        await applyEntryHop({
+          exitNode,
+          entryName: preferredEntryName || '',
+          targetGroupNames,
+          generation,
+        })
+      } catch {
+        // restore_selected_nodes may still be settling
       }
     })()
     return

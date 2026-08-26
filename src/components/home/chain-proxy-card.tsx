@@ -53,6 +53,8 @@ export const ChainProxyCard: React.FC = () => {
     testCurrentExit,
     checkCurrentIp,
     currentOutboundIsExit,
+    currentEntryName,
+    kernelPaused,
   } = useChainProxy()
 
   const [managerOpen, setManagerOpen] = useState(false)
@@ -275,9 +277,11 @@ export const ChainProxyCard: React.FC = () => {
                   p: 1.2,
                   px: 1.5,
                   borderRadius: 1.5,
-                  bgcolor: enabled ? 'primary.50' : 'action.hover',
+                  bgcolor:
+                    enabled && !kernelPaused ? 'primary.50' : 'action.hover',
                   border: '1px solid',
-                  borderColor: enabled ? 'primary.200' : 'transparent',
+                  borderColor:
+                    enabled && !kernelPaused ? 'primary.200' : 'transparent',
                   display: 'flex',
                   alignItems: 'center',
                   flexWrap: 'wrap',
@@ -285,7 +289,7 @@ export const ChainProxyCard: React.FC = () => {
                   fontSize: '0.8125rem',
                 }}
               >
-                {enabled ? (
+                {enabled && !kernelPaused ? (
                   <>
                     <LinkRounded color="primary" sx={{ fontSize: 18 }} />
                     <Typography
@@ -298,9 +302,12 @@ export const ChainProxyCard: React.FC = () => {
                     </Typography>
                     <Chip
                       size="small"
-                      label={t('home.chainProxy.dynamicEntry' as any, {
-                        defaultValue: '任意选定入口',
-                      })}
+                      label={
+                        currentEntryName ||
+                        t('home.chainProxy.dynamicEntry' as any, {
+                          defaultValue: '任意选定入口',
+                        })
+                      }
                       variant="outlined"
                       color="primary"
                       sx={{ height: 20, fontSize: '0.75rem' }}
@@ -323,6 +330,16 @@ export const ChainProxyCard: React.FC = () => {
                           sx={{ height: 20, fontSize: '0.7rem', ml: 'auto' }}
                         />
                       )}
+                  </>
+                ) : enabled ? (
+                  <>
+                    <LinkOffRounded color="warning" sx={{ fontSize: 18 }} />
+                    <Typography variant="caption" color="text.secondary">
+                      {t('home.chainProxy.statusPaused' as any, {
+                        defaultValue:
+                          '链式已暂停：系统代理和 TUN 均未开启，避免静态出口影响直连网络。打开其一后会自动恢复。',
+                      })}
+                    </Typography>
                   </>
                 ) : (
                   <>
