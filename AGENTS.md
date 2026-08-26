@@ -99,7 +99,7 @@ git push --force-with-lease origin feat/chain-proxy
 
 1. 在 `feat/chain-proxy` 上构建：`pnpm build:fast`（产物在 `src-tauri/target/fast-release/`，Windows 可执行文件为 `clash-verge.exe`）。
 2. **Tag 必须用** `chain-v2.5.x.y`（例如 `chain-v2.5.3.1`），**不要**打官方格式的 `v2.5.x`。官方 tag 会触发上游 Release workflow，且要求 tag 与 `package.json` 版本一致、并从 `main` 打出。
-3. 已发版本：<https://github.com/flylink-code/clash-verge-rev/releases/tag/chain-v2.5.3.1>
+3. 已发版本：<https://github.com/flylink-code/clash-verge-rev/releases/tag/chain-v2.5.3.2>
 
 ## 链式代理约定（实现时不要改语义）
 
