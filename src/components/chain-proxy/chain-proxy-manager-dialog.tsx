@@ -561,4 +561,3 @@ export const ChainProxyManagerDialog: React.FC<Props> = ({ open, onClose }) => {
     </>
   )
 }
-export default ChainProxyManagerDialog

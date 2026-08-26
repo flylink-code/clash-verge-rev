@@ -36,8 +36,6 @@ import {
   testChainProxyDelay,
 } from '@/utils/chain-proxy'
 
-export type { IExitIpData } from '@/utils/chain-proxy'
-
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms)

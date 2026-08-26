@@ -67,7 +67,7 @@ const PRIMARY_GROUP_KEYWORDS = [
 ]
 
 export const CHAIN_ENTRY_GROUP_NAME = '🔗 链式入口'
-export const CHAIN_EXIT_PREFIX = 'CV-EXIT-'
+const CHAIN_EXIT_PREFIX = 'CV-EXIT-'
 const LEGACY_EXIT_PREFIX = '🔒 '
 
 const DEFAULT_SETTINGS: IChainProxySettings = {
@@ -93,7 +93,7 @@ export interface ICurrentProxyContext {
   nodeName?: string
 }
 
-export interface IExitIpData {
+interface IExitIpData {
   ip: string
   country?: string
   country_code?: string
@@ -121,7 +121,7 @@ const sleep = (ms: number) =>
 
 let chainApplyGeneration = 0
 
-export function invalidateChainApplyJobs(): number {
+function invalidateChainApplyJobs(): number {
   chainApplyGeneration += 1
   return chainApplyGeneration
 }
@@ -140,18 +140,6 @@ export function isChainExitProxyName(name: string): boolean {
     name.startsWith(LEGACY_EXIT_PREFIX) ||
     name.startsWith('🔒')
   )
-}
-
-/**
- * Empty dialer uses the dedicated entry group. GLOBAL is mapped to the same
- * group so selecting the 🔒 exit as outbound cannot form a dialer cycle.
- */
-export function resolveDialerTarget(dialerGroup?: string): string {
-  const trimmed = dialerGroup?.trim()
-  if (!trimmed || trimmed === 'GLOBAL') {
-    return CHAIN_ENTRY_GROUP_NAME
-  }
-  return trimmed
 }
 
 function unwrapNonExitName(name?: string): string | undefined {
@@ -298,7 +286,7 @@ export function subscribeChainIpState(
   return () => window.removeEventListener(IP_CHANGE_EVENT, handler)
 }
 
-export function proxyViewHasName(view: ProxyViewV1, name: string): boolean {
+function proxyViewHasName(view: ProxyViewV1, name: string): boolean {
   if (Object.values(view.records).some((record) => record.name === name)) {
     return true
   }
@@ -306,7 +294,7 @@ export function proxyViewHasName(view: ProxyViewV1, name: string): boolean {
   return view.global?.name === name
 }
 
-export async function waitForProxyInCore(
+async function waitForProxyInCore(
   proxyName: string,
   timeoutMs = 8000,
 ): Promise<boolean> {
