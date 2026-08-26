@@ -11,6 +11,7 @@ import {
   readProfileFile,
   recordSelectedNode,
   saveProfileFile,
+  saveProfileFileOutcome,
   updateProxyChainConfigInRuntime,
 } from '@/services/cmds'
 import type { ProxyViewV1 } from '@/types/proxy-view'
@@ -754,6 +755,12 @@ ${SCRIPT_CHAIN_BLOCK_END}
 `.trim()
 }
 
+async function sleep(ms: number) {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
 /**
  * 将当前选中的静态出口节点与全局 Script 和 Proxies 进行双向同步
  * 当开启时：在 Script 中注入前置入口组并重定向所有流量出站到静态出口
@@ -763,10 +770,18 @@ async function saveProfileOrThrow(
   index: string,
   content: string,
 ): Promise<void> {
-  const saved = await saveProfileFile(index, content)
-  if (!saved) {
-    throw new Error(`Failed to save ${index} profile`)
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const outcome = await saveProfileFileOutcome(index, content)
+    if (outcome.status === 'valid') return
+    if (outcome.status === 'busy' || outcome.status === 'skipped') {
+      await sleep(350 * (attempt + 1))
+      continue
+    }
+    const detail =
+      outcome.status === 'invalid' ? outcome.message : outcome.status
+    throw new Error(`Failed to save ${index} profile: ${detail}`)
   }
+  throw new Error(`Failed to save ${index} profile: still busy`)
 }
 
 export async function syncChainProxyToMerge(

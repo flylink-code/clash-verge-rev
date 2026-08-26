@@ -7,7 +7,7 @@ import {
   useClashConfigData,
   useProxiesData,
 } from '@/providers/app-data-context'
-import { enhanceProfiles } from '@/services/cmds'
+import { enhanceProfilesOutcome } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
 import {
   type IChainExitNode,
@@ -42,10 +42,16 @@ const sleep = (ms: number) =>
   })
 
 async function enhanceProfilesWithRetry(): Promise<boolean> {
-  const first = await enhanceProfiles()
-  if (first) return true
-  await sleep(400)
-  return enhanceProfiles()
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const outcome = await enhanceProfilesOutcome()
+    if (outcome.status === 'valid') return true
+    if (outcome.status === 'busy' || outcome.status === 'skipped') {
+      await sleep(400 * (attempt + 1))
+      continue
+    }
+    return false
+  }
+  return false
 }
 
 type KernelIntent = 'apply' | 'pause' | 'idle'
@@ -191,8 +197,12 @@ export function useChainProxy() {
   applyAndSyncRef.current = applyAndSync
 
   useEffect(() => {
-    if (!settings.enabled) {
-      kernelIntent = 'idle'
+    // Wait until verge settings are loaded; treating "unknown" as offline would
+    // strip Script and race boot-time config validation on every cold start.
+    if (!verge || !settings.enabled) {
+      if (!settings.enabled) {
+        kernelIntent = 'idle'
+      }
       return
     }
     if (!trafficIntercepted) {
@@ -201,12 +211,12 @@ export function useChainProxy() {
       )
       return
     }
-    if (kernelIntent === 'pause') {
+    if (kernelIntent === 'pause' || kernelIntent === 'idle') {
       enqueueChainKernelSync('apply', () =>
         applyAndSyncRef.current(getChainProxySettings()),
       )
     }
-  }, [settings.enabled, trafficIntercepted])
+  }, [settings.enabled, trafficIntercepted, verge])
 
   const toggleEnabled = useCallback(
     async (targetEnabled?: boolean) => {
