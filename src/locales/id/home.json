@@ -112,6 +112,36 @@
         "noProxyNode": "Tidak ada node proxy"
       }
     },
+    "chainProxy": {
+      "cardTitle": "Chain Proxy (Static Exit)",
+      "manageTip": "Manage static exit nodes",
+      "enableTip": "Enable chain proxy",
+      "disableTip": "Disable chain proxy",
+      "noNodes": "No static exit nodes added yet",
+      "selectExitLabel": "Current Static Exit Node",
+      "statusEnabled": "Chain Active:",
+      "statusDisabled": "Chain Disabled (Traffic exits directly via regular node)",
+      "dynamicEntry": "Entry Hop (🔗 链式入口)",
+      "managerTitle": "Static Exit Node Manager",
+      "managerDesc": "Configure static IP exit nodes. Once enabled, all traffic will forward through the selected exit.",
+      "emptyTip": "No static exit nodes configured yet, click above to add",
+      "addFirst": "Add first exit node",
+      "currentActive": "In Use",
+      "useThis": "Use",
+      "editExit": "Edit Static Exit Node",
+      "addExit": "Add Static Exit Node",
+      "dialerGroup": "Dialer Group (dialer-proxy)",
+      "dialerGroupHint": "Default '🔗 链式入口' uses your currently selected node as the first hop (switchable on the Proxies page). GLOBAL is mapped to the same entry group to avoid a dialer loop.",
+      "testDelay": "Test Latency",
+      "testDelayTip": "Test latency and reachability of this exit node",
+      "checkIp": "Lookup Exit IP",
+      "checkIpTip": "Check real public egress IP and location",
+      "checkingIp": "Checking current egress IP...",
+      "ipMatched": "Exit IP Match",
+      "outboundSwitched": "Current outbound is the static exit",
+      "ipMayDiffer": "Public IP may differ from the configured server due to DNS or SNAT. Trust whether the current outbound is the static exit.",
+      "directIpTip": "Note: Chain proxy is currently disabled. Please enable chain proxy and System Proxy/TUN mode to route all traffic through the static exit."
+    },
     "tests": {
       "title": "Website Tests"
     },
