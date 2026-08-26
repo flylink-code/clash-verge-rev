@@ -54,8 +54,8 @@ jobs:
           TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          ID=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" --jq .id 2>/dev/null || true)
-          if [ -n "${ID}" ]; then
+          if gh api --silent "repos/${{ github.repository }}/releases/tags/${TAG}"; then
+            ID=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" --jq .id)
             echo "Using existing release $ID for $TAG"
           else
             ID=$(gh api --method POST "repos/${{ github.repository }}/releases" \
