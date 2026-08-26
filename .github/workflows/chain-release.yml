@@ -54,14 +54,15 @@ jobs:
           TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          if ID=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" --jq .id 2>/dev/null); then
+          ID=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" --jq .id 2>/dev/null || true)
+          if [ -n "${ID}" ]; then
             echo "Using existing release $ID for $TAG"
           else
-            gh release create "$TAG" \
-              --title "Clash Verge ${TAG} + Static Exit Chain Proxy" \
-              --notes "Building multi-platform packages…" \
-              --verify-tag
-            ID=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" --jq .id)
+            ID=$(gh api --method POST "repos/${{ github.repository }}/releases" \
+              -f tag_name="${TAG}" \
+              -f name="Clash Verge ${TAG} + Static Exit Chain Proxy" \
+              -f body="Building multi-platform packages…" \
+              --jq .id)
             echo "Created release $ID for $TAG"
           fi
           echo "id=$ID" >> "$GITHUB_OUTPUT"
