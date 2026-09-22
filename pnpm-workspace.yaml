@@ -12,3 +12,4 @@ allowBuilds:
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - dayjs@1.11.21
+  - '@zip.js/zip.js@2.17.0'
