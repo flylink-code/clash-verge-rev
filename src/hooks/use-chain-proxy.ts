@@ -302,14 +302,25 @@ export function useChainProxy() {
 
   const testNode = useCallback(
     async (node: IChainExitNode) => {
-      if (!settings.enabled || settings.selectedExitId !== node.id) {
-        showNotice.error('请先开启链式代理并选用该出口后再测试')
+      const entryName = resolvePreferredEntryName(
+        proxyView,
+        clashMode,
+        profileUid,
+      )
+      if (
+        !entryName ||
+        entryName === 'DIRECT' ||
+        isChainExitProxyName(entryName)
+      ) {
+        showNotice.error('请先选择一个入口节点后再测试')
         setChainDelayResult(node.id, 1e6)
         return 1e6
       }
       setChainDelayResult(node.id, -2)
       try {
-        const delay = await testChainProxyDelay(node.name)
+        const delay = await testChainProxyDelay(node, entryName, {
+          keepLoaded: settings.enabled && settings.selectedExitId === node.id,
+        })
         setChainDelayResult(node.id, delay)
         return delay
       } catch (err) {
@@ -319,7 +330,13 @@ export function useChainProxy() {
         return 1e6
       }
     },
-    [settings.enabled, settings.selectedExitId],
+    [
+      clashMode,
+      profileUid,
+      proxyView,
+      settings.enabled,
+      settings.selectedExitId,
+    ],
   )
 
   const testCurrentExit = useCallback(async () => {

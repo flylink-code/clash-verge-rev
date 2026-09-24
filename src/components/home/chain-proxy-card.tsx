@@ -228,9 +228,7 @@ export const ChainProxyCard: React.FC = () => {
                         }
                         color={buttonColor}
                         onClick={testCurrentExit}
-                        disabled={
-                          isDelayTesting || !selectedExitNode || !enabled
-                        }
+                        disabled={isDelayTesting || !selectedExitNode}
                         sx={{ minWidth: 'auto', px: 1.2, height: 36 }}
                       >
                         {currentDelay !== undefined && currentDelay !== -1

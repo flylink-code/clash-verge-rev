@@ -52,7 +52,6 @@ export const ChainProxyManagerDialog: React.FC<Props> = ({ open, onClose }) => {
     selectExitNode,
     delayResults,
     testNode,
-    enabled,
   } = useChainProxy()
 
   const [editingNode, setEditingNode] = useState<IChainExitNode | null>(null)
@@ -69,7 +68,7 @@ export const ChainProxyManagerDialog: React.FC<Props> = ({ open, onClose }) => {
       username: '',
       password: '',
       dialerGroup: CHAIN_ENTRY_GROUP_NAME,
-      udp: true,
+      udp: false,
       skipCertVerify: false,
       tls: false,
     })
@@ -326,7 +325,7 @@ export const ChainProxyManagerDialog: React.FC<Props> = ({ open, onClose }) => {
                             <IconButton
                               size="small"
                               onClick={() => testNode(node)}
-                              disabled={isTesting || !enabled || !isSelected}
+                              disabled={isTesting}
                               color="primary"
                             >
                               {isTesting ? (
@@ -531,7 +530,7 @@ export const ChainProxyManagerDialog: React.FC<Props> = ({ open, onClose }) => {
                   control={
                     <Switch
                       size="small"
-                      checked={editingNode.udp !== false}
+                      checked={editingNode.udp === true}
                       onChange={(e) =>
                         handleFormChange('udp', e.target.checked)
                       }

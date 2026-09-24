@@ -51,6 +51,8 @@ impl IRuntime {
     }
 
     /// Rebuilds `dialer-proxy` links from an ordered proxy chain, or removes them for `None`.
+    /// Static chain exits (`CV-EXIT-*`) keep their dialer so the proxies-page chain UI cannot
+    /// drop them back to a direct local dial.
     #[inline]
     pub fn update_proxy_chain_config(&mut self, proxy_chain_config: Option<Value>) {
         let config = if let Some(config) = self.config.as_mut() {
@@ -63,6 +65,7 @@ impl IRuntime {
             proxies.iter_mut().for_each(|proxy| {
                 if let Some(proxy) = proxy.as_mapping_mut()
                     && proxy.get("dialer-proxy").is_some()
+                    && !proxy_name_is_chain_exit(proxy)
                 {
                     proxy.remove("dialer-proxy");
                 }
@@ -83,4 +86,54 @@ impl IRuntime {
             }
         }
     }
+
+    /// Inserts or replaces a `CV-EXIT-*` proxy used only for a delay probe.
+    /// Does not add the name to any proxy group, so it cannot take over traffic.
+    pub fn upsert_chain_exit_probe(&mut self, proxy: Mapping) {
+        let Some(name) = proxy.get("name").and_then(Value::as_str).map(str::to_owned) else {
+            return;
+        };
+        if !name.starts_with(CHAIN_EXIT_PREFIX) {
+            return;
+        }
+        let Some(config) = self.config.as_mut() else {
+            return;
+        };
+        if !matches!(config.get("proxies"), Some(Value::Sequence(_))) {
+            config.insert("proxies".into(), Value::Sequence(Vec::new()));
+        }
+        let Some(Value::Sequence(proxies)) = config.get_mut("proxies") else {
+            return;
+        };
+        let name_value = Value::from(name.as_str());
+        if let Some(existing) = proxies.iter_mut().find(|item| item.get("name") == Some(&name_value)) {
+            *existing = Value::Mapping(proxy);
+        } else {
+            proxies.push(Value::Mapping(proxy));
+        }
+    }
+
+    /// Removes a probe-only `CV-EXIT-*` proxy. Group lists are left untouched.
+    pub fn remove_chain_exit_probe(&mut self, name: &str) {
+        if !name.starts_with(CHAIN_EXIT_PREFIX) {
+            return;
+        }
+        let Some(config) = self.config.as_mut() else {
+            return;
+        };
+        let Some(Value::Sequence(proxies)) = config.get_mut("proxies") else {
+            return;
+        };
+        let name_value = Value::from(name);
+        proxies.retain(|proxy| proxy.get("name") != Some(&name_value));
+    }
+}
+
+const CHAIN_EXIT_PREFIX: &str = "CV-EXIT-";
+
+fn proxy_name_is_chain_exit(proxy: &Mapping) -> bool {
+    proxy
+        .get("name")
+        .and_then(Value::as_str)
+        .is_some_and(|name| name.starts_with(CHAIN_EXIT_PREFIX))
 }

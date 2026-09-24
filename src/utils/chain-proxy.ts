@@ -10,9 +10,11 @@ import {
   getProxyView,
   readProfileFile,
   recordSelectedNode,
+  removeChainExitProbe,
   saveProfileFile,
   saveProfileFileOutcome,
   updateProxyChainConfigInRuntime,
+  upsertChainExitProbe,
 } from '@/services/cmds'
 import type { ProxyViewV1 } from '@/types/proxy-view'
 import { parseYamlSafe } from '@/utils/yaml'
@@ -121,6 +123,7 @@ const sleep = (ms: number) =>
   })
 
 let chainApplyGeneration = 0
+let lastClosedHop: string | null = null
 
 function invalidateChainApplyJobs(): number {
   chainApplyGeneration += 1
@@ -366,6 +369,9 @@ export async function applyEntryHop(options: {
     }
   }
   if (!isChainApplyCurrent(generation)) return
+  const hopKey = `${entryName}=>${exitName}`
+  if (lastClosedHop === hopKey) return
+  lastClosedHop = hopKey
   await closeAllConnections().catch(() => {})
 }
 
@@ -418,6 +424,7 @@ export async function activateChainProxySelection(options: {
     return
   }
 
+  lastClosedHop = null
   await updateProxyChainConfigInRuntime(null).catch(() => {})
 
   if (restoreSelection) {
@@ -519,11 +526,7 @@ export function buildChainProxyConfig(form: IChainProxyFormData): IProxyConfig {
   }
 
   if (form.type === 'socks5') {
-    if (typeof form.udp === 'boolean') {
-      proxy.udp = form.udp
-    } else {
-      proxy.udp = true
-    }
+    proxy.udp = form.udp === true
   }
 
   if (form.tls) {
@@ -665,7 +668,7 @@ function generateChainProxyScript(
     exitProxyConfig.password = exitNode.password
   }
   if (exitNode.type === 'socks5') {
-    exitProxyConfig.udp = exitNode.udp !== false
+    exitProxyConfig.udp = exitNode.udp === true
   }
   if (exitNode.tls) {
     exitProxyConfig.tls = true
@@ -848,28 +851,78 @@ export async function syncChainProxyToMerge(
   }
 }
 
+const CHAIN_PROBE_TIMEOUT_MS = 15000
+
+async function applyRuntimeProbe(
+  task: () => Promise<ValidationOutcome>,
+): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const outcome = await task()
+    if (outcome.status === 'valid') return
+    if (outcome.status === 'busy' || outcome.status === 'skipped') {
+      await sleep(350 * (attempt + 1))
+      continue
+    }
+    const detail =
+      outcome.status === 'invalid' ? outcome.message : outcome.status
+    throw new Error(detail)
+  }
+  throw new Error('runtime config update is still busy')
+}
+
 /**
- * 测试链式静态出口节点的连通性与延迟 (ms)
- * @param nodeName 静态出口节点名称
- * @param testUrl 测试 URL，默认使用 cloudflare 204
- * @param timeout 超时时间 (毫秒)，默认 10000ms
+ * 测试链式静态出口的延迟。未加载到内核时临时放入探测节点，
+ * 经 entryName 作为 dialer-proxy，不加入任何策略组。
  */
 export async function testChainProxyDelay(
-  nodeName: string,
+  node: IChainExitNode,
+  entryName: string,
+  options: { keepLoaded: boolean },
   testUrl = 'http://cp.cloudflare.com/generate_204',
-  timeout = 10000,
 ): Promise<number> {
-  const proxyName = chainExitProxyName(nodeName)
-  const exists = await waitForProxyInCore(proxyName, 5000)
-  if (!exists) {
-    throw new Error(`Exit proxy ${proxyName} is not loaded in core`)
+  const proxyName = chainExitProxyName(node.name)
+  const probeOnly = !options.keepLoaded
+  if (probeOnly) {
+    await applyRuntimeProbe(() =>
+      upsertChainExitProbe({
+        name: proxyName,
+        type: node.type,
+        server: node.server,
+        port: node.port,
+        username: node.username?.trim() || undefined,
+        password: node.password || undefined,
+        'dialer-proxy': entryName,
+        udp: node.type === 'socks5' ? node.udp === true : undefined,
+        tls: node.tls === true ? true : undefined,
+        'skip-cert-verify': node.skipCertVerify === true ? true : undefined,
+      }),
+    )
   }
   try {
-    const res = await delayProxyByName(proxyName, testUrl, timeout)
+    const exists = await waitForProxyInCore(proxyName, 8000)
+    if (!exists) {
+      throw new Error(`Exit proxy ${proxyName} is not loaded in core`)
+    }
+    const res = await delayProxyByName(
+      proxyName,
+      testUrl,
+      CHAIN_PROBE_TIMEOUT_MS,
+    )
     return typeof res?.delay === 'number' && res.delay > 0 ? res.delay : 1e6
   } catch (err) {
     console.warn(`[ChainProxy] Test delay failed for ${proxyName}:`, err)
+    if (err instanceof Error && err.message.includes('is not loaded')) {
+      throw err
+    }
     return 1e6
+  } finally {
+    if (probeOnly) {
+      await applyRuntimeProbe(() => removeChainExitProbe(proxyName)).catch(
+        (err) => {
+          console.warn('[ChainProxy] Failed to remove exit probe:', err)
+        },
+      )
+    }
   }
 }
 

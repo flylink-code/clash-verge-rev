@@ -116,6 +116,27 @@ export async function updateProxyChainConfigInRuntime(proxyChainConfig: any) {
   })
 }
 
+export interface IChainExitProbeSpec {
+  name: string
+  type: 'socks5' | 'http'
+  server: string
+  port: number
+  username?: string
+  password?: string
+  'dialer-proxy': string
+  udp?: boolean
+  tls?: boolean
+  'skip-cert-verify'?: boolean
+}
+
+export async function upsertChainExitProbe(proxy: IChainExitProbeSpec) {
+  return invoke<ValidationOutcome>('upsert_chain_exit_probe', { proxy })
+}
+
+export async function removeChainExitProbe(name: string) {
+  return invoke<ValidationOutcome>('remove_chain_exit_probe', { name })
+}
+
 export async function patchClashConfig(payload: Partial<IConfigData>) {
   return invoke<void>('patch_clash_config', { payload })
 }

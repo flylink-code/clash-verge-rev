@@ -44,7 +44,7 @@ export const ChainProxyDialog: React.FC<Props> = ({
     username: '',
     password: '',
     dialerProxy: '',
-    udp: true,
+    udp: false,
     skipCertVerify: false,
     tls: false,
   })

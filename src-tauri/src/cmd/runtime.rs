@@ -1,5 +1,10 @@
 use super::CmdResult;
-use crate::{cmd::StringifyErr as _, config::Config, core::CoreManager, utils::yaml_emitter};
+use crate::{
+    cmd::StringifyErr as _,
+    config::Config,
+    core::{CoreManager, validate::ValidationOutcome},
+    utils::yaml_emitter,
+};
 use anyhow::{Context as _, anyhow};
 use clash_verge_logging::{Type, logging};
 use serde_yaml_ng::Mapping;
@@ -103,4 +108,74 @@ pub async fn update_proxy_chain_config_in_runtime(proxy_chain_config: Option<ser
     }
 
     Ok(())
+}
+
+#[derive(serde::Deserialize)]
+pub struct ChainExitProbeSpec {
+    name: std::string::String,
+    #[serde(rename = "type")]
+    kind: std::string::String,
+    server: std::string::String,
+    port: u16,
+    username: Option<std::string::String>,
+    password: Option<std::string::String>,
+    #[serde(rename = "dialer-proxy")]
+    dialer_proxy: std::string::String,
+    udp: Option<bool>,
+    tls: Option<bool>,
+    #[serde(rename = "skip-cert-verify")]
+    skip_cert_verify: Option<bool>,
+}
+
+fn chain_exit_probe_mapping(spec: ChainExitProbeSpec) -> Mapping {
+    let mut proxy = Mapping::new();
+    proxy.insert("name".into(), spec.name.into());
+    proxy.insert("type".into(), spec.kind.into());
+    proxy.insert("server".into(), spec.server.into());
+    proxy.insert("port".into(), spec.port.into());
+    proxy.insert("dialer-proxy".into(), spec.dialer_proxy.into());
+    if let Some(username) = spec.username.filter(|value| !value.is_empty()) {
+        proxy.insert("username".into(), username.into());
+    }
+    if let Some(password) = spec.password.filter(|value| !value.is_empty()) {
+        proxy.insert("password".into(), password.into());
+    }
+    if let Some(udp) = spec.udp {
+        proxy.insert("udp".into(), udp.into());
+    }
+    if spec.tls == Some(true) {
+        proxy.insert("tls".into(), true.into());
+    }
+    if spec.skip_cert_verify == Some(true) {
+        proxy.insert("skip-cert-verify".into(), true.into());
+    }
+    proxy
+}
+
+#[tauri::command]
+pub async fn upsert_chain_exit_probe(proxy: ChainExitProbeSpec) -> CmdResult<ValidationOutcome> {
+    if !proxy.name.starts_with("CV-EXIT-") {
+        return Ok(ValidationOutcome::invalid_from_message(
+            "probe name must be a chain exit",
+        ));
+    }
+    let dialer = proxy.dialer_proxy.trim();
+    if dialer.is_empty() || dialer == "DIRECT" || dialer.starts_with("CV-EXIT-") {
+        return Ok(ValidationOutcome::invalid_from_message(
+            "probe requires a selected entry node",
+        ));
+    }
+    let mapping = chain_exit_probe_mapping(proxy);
+    CoreManager::global()
+        .update_runtime_config(move |runtime| runtime.upsert_chain_exit_probe(mapping))
+        .await
+        .stringify_err()
+}
+
+#[tauri::command]
+pub async fn remove_chain_exit_probe(name: std::string::String) -> CmdResult<ValidationOutcome> {
+    CoreManager::global()
+        .update_runtime_config(move |runtime| runtime.remove_chain_exit_probe(&name))
+        .await
+        .stringify_err()
 }
