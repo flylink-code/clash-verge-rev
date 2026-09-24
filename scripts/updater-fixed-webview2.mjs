@@ -22,6 +22,7 @@ async function resolveUpdater() {
   console.log()
 
   const updateData = {
+    version: tag.name,
     name: tag.name,
     notes: await resolveUpdateLog(tag.name), // use Changelog.md
     pub_date: new Date().toISOString(),

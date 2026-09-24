@@ -517,3 +517,23 @@ jobs:
           gh release edit "$TAG" \
             --title "Clash Verge ${TAG} + Static Exit Chain Proxy" \
             --notes-file release.txt
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.19.0'
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        with:
+          run_install: false
+
+      - name: Pnpm install
+        run: pnpm i
+
+      - name: Publish updater manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pnpm updater
+          pnpm updater-fixed-webview2

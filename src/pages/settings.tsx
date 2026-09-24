@@ -20,7 +20,7 @@ const SettingPage = () => {
   }
 
   const toGithubRepo = useLockFn(() =>
-    openExternalUrl('https://github.com/clash-verge-rev/clash-verge-rev').catch(
+    openExternalUrl('https://github.com/flylink-code/clash-verge-rev').catch(
       onError,
     ),
   )
